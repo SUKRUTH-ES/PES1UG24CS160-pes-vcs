@@ -19,9 +19,15 @@ analysis-only questions from Phases 5 and 6.
 
 ![Screenshot 1A](screenshots/scrn_1A.png)
 
+This confirms successful blob storage, deduplication, and integrity checking in
+the object store implementation.
+
 **Screenshot 1B — `find .pes/objects -type f`**
 
 ![Screenshot 1B](screenshots/scrn_1B.png)
+
+The object files are sharded by the first two hexadecimal characters of the
+hash, which matches the intended content-addressable storage layout.
 
 #### Phase 2
 
@@ -29,9 +35,15 @@ analysis-only questions from Phases 5 and 6.
 
 ![Screenshot 2A](screenshots/scrn_2A.png)
 
+This shows that tree serialization and parsing are consistent and that the
+serialized ordering is deterministic.
+
 **Screenshot 2B — raw tree object via `xxd`**
 
 ![Screenshot 2B](screenshots/scrn_2B.png)
+
+The raw dump shows the tree header followed by serialized entries containing
+mode, filename, and binary object hashes.
 
 #### Phase 3
 
@@ -39,9 +51,15 @@ analysis-only questions from Phases 5 and 6.
 
 ![Screenshot 3A](screenshots/scrn_3A.png)
 
+The status output shows that staged files are tracked correctly and that no
+unstaged changes are reported immediately after adding them.
+
 **Screenshot 3B — `cat .pes/index`**
 
 ![Screenshot 3B](screenshots/scrn_3B.png)
+
+The index stores the file mode, blob hash, modification time, size, and path in
+the expected text format.
 
 #### Phase 4
 
@@ -49,13 +67,22 @@ analysis-only questions from Phases 5 and 6.
 
 ![Screenshot 4A](screenshots/scrn_4A.png)
 
+The log confirms that commits are linked through parents and printed from newest
+to oldest with author, timestamp, and message metadata.
+
 **Screenshot 4B — `find .pes -type f | sort`**
 
 ![Screenshot 4B](screenshots/scrn_4B.png)
 
+This listing shows the growth of repository metadata after multiple commits,
+including refs, the index, and newly created objects.
+
 **Screenshot 4C — `cat .pes/refs/heads/main` and `cat .pes/HEAD`**
 
 ![Screenshot 4C](screenshots/scrn_4C.png)
+
+The output demonstrates the expected reference chain: `HEAD` points to the
+branch name, and the branch file points to the latest commit hash.
 
 #### Final Integration Test
 
@@ -66,6 +93,10 @@ analysis-only questions from Phases 5 and 6.
 ![Integration Screenshot 2](screenshots/integration_2.png)
 
 ![Integration Screenshot 3](screenshots/integration_3.png)
+
+Together, these screenshots verify the full end-to-end workflow from repository
+initialization through staging, committing, history traversal, and reference
+updates.
 
 ### Analysis Answers
 
