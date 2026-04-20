@@ -143,6 +143,10 @@ still knows one of the detached commit hashes: create a new branch file under
 hash. Once a reference points to the detached history again, the commits are no
 longer orphaned and can be reached through normal log traversal.
 
+**Design assumption for Q5:** these checkout answers assume PES-VCS updates only
+tracked files and rebuilds the working directory from tree objects, rather than
+trying to preserve arbitrary untracked files automatically.
+
 #### Q6.1 Garbage Collection and Space Reclamation
 
 Garbage collection should use a mark-and-sweep algorithm. The mark phase starts
@@ -172,6 +176,10 @@ at a commit whose underlying objects were just removed, corrupting the
 repository. Real Git avoids this with coordination and conservative retention:
 reference updates are atomic, very new objects are protected, and GC is careful
 not to collect objects that may still become reachable moments later.
+
+**Failure consequence for Q6:** the most visible symptom would be a branch ref
+that points to a commit hash which exists, but whose tree or blob dependencies
+have already been deleted, causing future reads or log/tree walks to fail.
 
 ### Notes
 
