@@ -195,10 +195,6 @@ not to collect objects that may still become reachable moments later.
 that points to a commit hash which exists, but whose tree or blob dependencies
 have already been deleted, causing future reads or log/tree walks to fail.
 
-### Notes
-
-When you send the screenshots, they can be inserted directly under each
-placeholder using normal Markdown image syntax.
 
 ---
 
