@@ -11,6 +11,20 @@
 This section contains the required screenshots and the written answers for the
 analysis-only questions from Phases 5 and 6.
 
+### Implementation Summary
+
+- Phase 1 implements content-addressable object storage with hash verification.
+- Phase 2 implements tree serialization and root tree construction from staged files.
+- Phase 3 implements the text-based staging index with atomic saves.
+- Phase 4 implements commit creation, reference updates, and log traversal.
+
+### Validation Summary
+
+- `./test_objects` passes for object storage behavior.
+- `./test_tree` passes for tree parsing and deterministic serialization.
+- Manual `pes init`, `pes add`, `pes status`, `pes commit`, and `pes log` flows work.
+- `make test-integration` completes successfully.
+
 ### Screenshots
 
 #### Phase 1
