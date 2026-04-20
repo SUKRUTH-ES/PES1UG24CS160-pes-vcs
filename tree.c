@@ -10,6 +10,7 @@
 //   "100644 hello.txt\0" followed by 32 raw bytes of SHA-256
 
 #include "tree.h"
+#include "index.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +22,84 @@
 #define MODE_FILE      0100644
 #define MODE_EXEC      0100755
 #define MODE_DIR       0040000
+
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+
+typedef struct TreeNode {
+    char name[256];
+    int is_dir;
+    uint32_t mode;
+    ObjectID hash;
+    struct TreeNode *children;
+    struct TreeNode *next;
+} TreeNode;
+
+static TreeNode *tree_node_find_child(TreeNode *parent, const char *name) {
+    for (TreeNode *child = parent->children; child != NULL; child = child->next) {
+        if (strcmp(child->name, name) == 0) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+static TreeNode *tree_node_add_child(TreeNode *parent, const char *name, int is_dir) {
+    TreeNode *node = calloc(1, sizeof(TreeNode));
+    if (node == NULL) {
+        return NULL;
+    }
+    snprintf(node->name, sizeof(node->name), "%s", name);
+    node->is_dir = is_dir;
+    node->mode = is_dir ? MODE_DIR : MODE_FILE;
+    node->next = parent->children;
+    parent->children = node;
+    return node;
+}
+
+static void tree_node_free(TreeNode *node) {
+    TreeNode *child = node->children;
+    while (child != NULL) {
+        TreeNode *next = child->next;
+        tree_node_free(child);
+        child = next;
+    }
+    free(node);
+}
+
+static int tree_node_write(TreeNode *node, ObjectID *id_out) {
+    Tree tree = {0};
+    void *data = NULL;
+    size_t len = 0;
+
+    for (TreeNode *child = node->children; child != NULL; child = child->next) {
+        ObjectID child_id;
+        if (tree.count >= MAX_TREE_ENTRIES) {
+            return -1;
+        }
+        if (child->is_dir) {
+            if (tree_node_write(child, &child_id) != 0) {
+                return -1;
+            }
+        } else {
+            child_id = child->hash;
+        }
+
+        tree.entries[tree.count].mode = child->is_dir ? MODE_DIR : child->mode;
+        tree.entries[tree.count].hash = child_id;
+        snprintf(tree.entries[tree.count].name, sizeof(tree.entries[tree.count].name), "%s", child->name);
+        tree.count++;
+    }
+
+    if (tree_serialize(&tree, &data, &len) != 0) {
+        return -1;
+    }
+    if (object_write(OBJ_TREE, data, len, id_out) != 0) {
+        free(data);
+        return -1;
+    }
+    free(data);
+    return 0;
+}
 
 // ─── PROVIDED ───────────────────────────────────────────────────────────────
 
@@ -130,8 +209,49 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //
 // Returns 0 on success, -1 on error.
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Index index;
+    TreeNode root = {0};
+
+    if (index_load(&index) != 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < index.count; i++) {
+        char path_copy[512];
+        char *part;
+        char *saveptr = NULL;
+        TreeNode *current = &root;
+
+        snprintf(path_copy, sizeof(path_copy), "%s", index.entries[i].path);
+        part = strtok_r(path_copy, "/", &saveptr);
+        while (part != NULL) {
+            char *next = strtok_r(NULL, "/", &saveptr);
+            TreeNode *child = tree_node_find_child(current, part);
+
+            if (child == NULL) {
+                child = tree_node_add_child(current, part, next != NULL);
+                if (child == NULL) {
+                    tree_node_free(root.children);
+                    return -1;
+                }
+            }
+
+            if (next == NULL) {
+                child->is_dir = 0;
+                child->mode = index.entries[i].mode;
+                child->hash = index.entries[i].hash;
+            }
+
+            current = child;
+            part = next;
+        }
+    }
+
+    if (tree_node_write(&root, id_out) != 0) {
+        tree_node_free(root.children);
+        return -1;
+    }
+
+    tree_node_free(root.children);
+    return 0;
 }

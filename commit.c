@@ -33,21 +33,26 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 
 // Parse raw commit data into a Commit struct.
 int commit_parse(const void *data, size_t len, Commit *commit_out) {
-    (void)len;
     const char *p = (const char *)data;
+    const char *end = p + len;
     char hex[HASH_HEX_SIZE + 1];
+    const char *line_end;
 
     // "tree <hex>\n"
     if (sscanf(p, "tree %64s\n", hex) != 1) return -1;
     if (hex_to_hash(hex, &commit_out->tree) != 0) return -1;
-    p = strchr(p, '\n') + 1;
+    line_end = memchr(p, '\n', end - p);
+    if (!line_end) return -1;
+    p = line_end + 1;
 
     // optional "parent <hex>\n"
     if (strncmp(p, "parent ", 7) == 0) {
         if (sscanf(p, "parent %64s\n", hex) != 1) return -1;
         if (hex_to_hash(hex, &commit_out->parent) != 0) return -1;
         commit_out->has_parent = 1;
-        p = strchr(p, '\n') + 1;
+        line_end = memchr(p, '\n', end - p);
+        if (!line_end) return -1;
+        p = line_end + 1;
     } else {
         commit_out->has_parent = 0;
     }
@@ -63,11 +68,22 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     *last_space = '\0';
     snprintf(commit_out->author, sizeof(commit_out->author), "%s", author_buf);
     commit_out->timestamp = ts;
-    p = strchr(p, '\n') + 1;  // skip author line
-    p = strchr(p, '\n') + 1;  // skip committer line
-    p = strchr(p, '\n') + 1;  // skip blank line
+    line_end = memchr(p, '\n', end - p);
+    if (!line_end) return -1;
+    p = line_end + 1;  // skip author line
+    line_end = memchr(p, '\n', end - p);
+    if (!line_end) return -1;
+    p = line_end + 1;  // skip committer line
+    line_end = memchr(p, '\n', end - p);
+    if (!line_end) return -1;
+    p = line_end + 1;  // skip blank line
 
-    snprintf(commit_out->message, sizeof(commit_out->message), "%s", p);
+    size_t message_len = (size_t)(end - p);
+    if (message_len >= sizeof(commit_out->message)) {
+        message_len = sizeof(commit_out->message) - 1;
+    }
+    memcpy(commit_out->message, p, message_len);
+    commit_out->message[message_len] = '\0';
     return 0;
 }
 
@@ -194,8 +210,37 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    Commit commit = {0};
+    void *data = NULL;
+    size_t len = 0;
+
+    if (tree_from_index(&commit.tree) != 0) {
+        return -1;
+    }
+
+    if (head_read(&commit.parent) == 0) {
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0;
+    }
+
+    snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
+    commit.timestamp = (uint64_t)time(NULL);
+    snprintf(commit.message, sizeof(commit.message), "%s", message);
+
+    if (commit_serialize(&commit, &data, &len) != 0) {
+        return -1;
+    }
+
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        free(data);
+        return -1;
+    }
+    free(data);
+
+    if (head_update(commit_id_out) != 0) {
+        return -1;
+    }
+
+    return 0;
 }

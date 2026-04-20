@@ -6,6 +6,149 @@
 
 ---
 
+## Lab Report
+
+This section contains the required screenshots and the written answers for the
+analysis-only questions from Phases 5 and 6.
+
+### Screenshots
+
+#### Phase 1
+
+**Screenshot 1A — `./test_objects` output**
+
+![Screenshot 1A](screenshots/scrn_1A.png)
+
+**Screenshot 1B — `find .pes/objects -type f`**
+
+![Screenshot 1B](screenshots/scrn_1B.png)
+
+#### Phase 2
+
+**Screenshot 2A — `./test_tree` output**
+
+![Screenshot 2A](screenshots/scrn_2A.png)
+
+**Screenshot 2B — raw tree object via `xxd`**
+
+![Screenshot 2B](screenshots/scrn_2B.png)
+
+#### Phase 3
+
+**Screenshot 3A — `pes init` -> `pes add` -> `pes status`**
+
+![Screenshot 3A](screenshots/scrn_3A.png)
+
+**Screenshot 3B — `cat .pes/index`**
+
+![Screenshot 3B](screenshots/scrn_3B.png)
+
+#### Phase 4
+
+**Screenshot 4A — `pes log`**
+
+![Screenshot 4A](screenshots/scrn_4A.png)
+
+**Screenshot 4B — `find .pes -type f | sort`**
+
+![Screenshot 4B](screenshots/scrn_4B.png)
+
+**Screenshot 4C — `cat .pes/refs/heads/main` and `cat .pes/HEAD`**
+
+![Screenshot 4C](screenshots/scrn_4C.png)
+
+#### Final Integration Test
+
+**Integration Screenshot — `make test-integration`**
+
+![Integration Screenshot 1](screenshots/integration_1.png)
+
+![Integration Screenshot 2](screenshots/integration_2.png)
+
+![Integration Screenshot 3](screenshots/integration_3.png)
+
+### Analysis Answers
+
+#### Q5.1 Branching and Checkout
+
+A branch in PES-VCS should be implemented as a file under
+`.pes/refs/heads/<branch>` that stores the target commit hash, exactly like the
+existing `main` branch file. A `pes checkout <branch>` operation would first
+verify that the branch file exists, then rewrite `.pes/HEAD` so that it contains
+`ref: refs/heads/<branch>`. After that, the working directory must be updated to
+match the tree pointed to by the branch's latest commit. That means reading the
+target commit object, reading its root tree, recursively materializing every
+file and directory into the working directory, and removing tracked files that
+exist in the current branch but not in the target branch. The complexity comes
+from the fact that checkout is not only a metadata change in `.pes/`; it also
+has to safely transform the user's actual filesystem state without overwriting
+uncommitted work or leaving the repository half-updated if an error occurs in
+the middle.
+
+#### Q5.2 Dirty Working Directory Conflict Detection
+
+The conflict check can be done by comparing three states: the HEAD snapshot, the
+index, and the working directory. For each tracked path in the current branch,
+PES-VCS should determine whether the working directory still matches the staged
+version recorded in the index. The fast path is to compare `stat()` metadata
+such as modification time and size against the index entry. If those values no
+longer match, the safe path is to re-read the file, hash it, and compare that
+hash with the blob hash stored in the index or current HEAD tree. If a file has
+local modifications and the target branch also wants a different version of that
+same path, checkout must refuse because switching branches would overwrite user
+data. In short, PES-VCS should reject checkout when a tracked file is dirty in
+the working tree and the target branch would update or delete that path.
+
+#### Q5.3 Detached HEAD
+
+In detached HEAD state, `.pes/HEAD` would contain a commit hash directly instead
+of a symbolic reference like `ref: refs/heads/main`. New commits made in this
+state still work: each new commit records the previous detached commit as its
+parent, so history continues normally, but no branch name moves forward to
+remember those commits. As a result, the commits become hard to find later
+unless the user notes the hash manually. Recovery is straightforward if the user
+still knows one of the detached commit hashes: create a new branch file under
+`.pes/refs/heads/` pointing to that commit, or update an existing branch to that
+hash. Once a reference points to the detached history again, the commits are no
+longer orphaned and can be reached through normal log traversal.
+
+#### Q6.1 Garbage Collection and Space Reclamation
+
+Garbage collection should use a mark-and-sweep algorithm. The mark phase starts
+from every live reference, such as all files under `.pes/refs/heads/` and also
+`HEAD` if it stores a direct commit hash. For each referenced commit, PES-VCS
+recursively marks the commit itself, its parent commits, its root tree, every
+subtree reachable from that tree, and every blob reachable from those trees. A
+hash set is the right data structure for tracking reachability efficiently,
+because membership tests and inserts are close to O(1). After marking, the
+sweep phase walks `.pes/objects/` and deletes any object whose hash is not in
+the reachable set. For a repository with 100,000 commits and 50 branches, the
+number of visited objects is on the order of the distinct reachable commits,
+trees, and blobs, not `100,000 * 50`, because many branches usually share large
+parts of history. In practice, GC would still need to visit a very large number
+of objects, likely hundreds of thousands or more in a moderately sized repo.
+
+#### Q6.2 Why Concurrent GC Is Dangerous
+
+Running garbage collection concurrently with commit creation creates a race
+between "object becomes reachable" and "reference is updated." During commit,
+PES-VCS first writes blobs, trees, and the new commit object, and only at the
+end updates the branch reference. If GC scans references in the middle of that
+sequence, it may not yet see the new commit from any branch, so it can conclude
+that the newly written tree or commit objects are unreachable and delete them.
+Immediately after that, the commit path might update `refs/heads/main` to point
+at a commit whose underlying objects were just removed, corrupting the
+repository. Real Git avoids this with coordination and conservative retention:
+reference updates are atomic, very new objects are protected, and GC is careful
+not to collect objects that may still become reachable moments later.
+
+### Notes
+
+When you send the screenshots, they can be inserted directly under each
+placeholder using normal Markdown image syntax.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
